@@ -1,8 +1,18 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, FileText, Image as ImageIcon, Layers, Tag, X } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  FileText,
+  Image as ImageIcon,
+  Layers,
+  Loader2,
+  RefreshCw,
+  Tag,
+  X,
+} from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { api } from '../lib/api';
+import { api, regenerateContext } from '../lib/api';
+import { Markdown } from './Markdown';
 import type { ProjectDetail, ProjectFileRef } from '../types';
 
 type DetailTab = 'overview' | 'screenshots' | 'context';
@@ -20,6 +30,15 @@ interface Props {
 
 export function ProjectDetailsModal({ project, issueCounts, onClose }: Props) {
   const [tab, setTab] = useState<DetailTab>('overview');
+  const qc = useQueryClient();
+  const regenerate = useMutation({
+    mutationFn: () => regenerateContext(project.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['project', project.id] });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+  const regenerating = regenerate.isPending || project.contextStatus === 'generating';
   const screenshots = useMemo(
     () =>
       (project.files ?? []).filter(
@@ -86,7 +105,7 @@ export function ProjectDetailsModal({ project, issueCounts, onClose }: Props) {
                 <div className="mb-4 flex items-center gap-2 text-sm font-medium text-ink">
                   <FileText size={15} className="text-rust" /> Project brief
                 </div>
-                <MarkdownView content={project.description} />
+                <Markdown content={project.description} className="text-ink/80" />
               </section>
 
               <aside className="space-y-4">
@@ -129,9 +148,27 @@ export function ProjectDetailsModal({ project, issueCounts, onClose }: Props) {
           )}
 
           {tab === 'context' && (
-            <section className="grid gap-4 lg:grid-cols-2">
+            <section className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-ink">AI-generated project context</p>
+                  <p className="text-xs text-muted">
+                    Built from the project brief and uploaded screenshots.
+                  </p>
+                </div>
+                <button
+                  onClick={() => regenerate.mutate()}
+                  disabled={regenerating}
+                  className="premium-focus inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-sm text-ink hover:border-rust/30 disabled:opacity-50"
+                  title="Regenerate AI context from the brief and screenshots"
+                >
+                  <RefreshCw size={14} className={regenerating ? 'animate-spin' : ''} />
+                  {regenerating ? 'Generating' : 'Regenerate'}
+                </button>
+              </div>
+
               {project.context ? (
-                <>
+                <div className="grid gap-4 lg:grid-cols-2">
                   <ContextCard title="Summary" items={[project.context.summary]} paragraph />
                   <ContextCard title="Audience" items={project.context.audience ? [project.context.audience] : []} paragraph />
                   <ContextCard title="Components" items={project.context.components} />
@@ -140,9 +177,19 @@ export function ProjectDetailsModal({ project, issueCounts, onClose }: Props) {
                   <ContextCard title="Risks" items={project.context.risks} icon={<AlertTriangle size={14} />} />
                   <ContextCard title="Open questions" items={project.context.openQuestions} />
                   <ContextCard title="Suggested labels" items={project.context.suggestedLabels} />
-                </>
+                </div>
+              ) : project.contextStatus === 'failed' ? (
+                <EmptyState
+                  icon={<AlertTriangle size={22} />}
+                  title="AI context generation failed"
+                  description="Something went wrong while building the context. Regenerate to rebuild it from the brief and screenshots."
+                />
               ) : (
-                <EmptyState icon={<Layers size={22} />} title="AI context is still being generated" />
+                <EmptyState
+                  icon={<Loader2 size={22} className="animate-spin" />}
+                  title="AI context is still being generated"
+                  description="This usually takes a few moments and will appear here automatically."
+                />
               )}
             </section>
           )}
@@ -292,140 +339,20 @@ function ContextCard({
   );
 }
 
-function EmptyState({ icon, title }: { icon: React.ReactNode; title: string }) {
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description?: string;
+}) {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-line bg-white text-muted">
+    <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-line bg-white px-6 text-center text-muted">
       {icon}
       <p className="mt-2 text-sm">{title}</p>
+      {description ? <p className="mt-1 max-w-sm text-xs text-muted">{description}</p> : null}
     </div>
   );
-}
-
-function MarkdownView({ content }: { content: string }) {
-  const lines = content.split(/\r?\n/);
-  const blocks: React.ReactNode[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-    if (heading) {
-      const level = heading[1].length;
-      const className = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg';
-      blocks.push(
-        <h3 key={index} className={`mt-5 font-display ${className} text-ink first:mt-0`}>
-          {renderInline(heading[2])}
-        </h3>,
-      );
-      index += 1;
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quote: string[] = [];
-      while (index < lines.length && /^>\s?/.test(lines[index])) {
-        quote.push(lines[index].replace(/^>\s?/, ''));
-        index += 1;
-      }
-      blocks.push(
-        <blockquote key={index} className="border-l-2 border-rust/50 bg-canvas px-4 py-3 text-sm text-ink/80">
-          {quote.map((q) => renderInline(q))}
-        </blockquote>,
-      );
-      continue;
-    }
-
-    if (/^\s*[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s*[-*]\s+/, ''));
-        index += 1;
-      }
-      blocks.push(
-        <ul key={index} className="my-3 list-disc space-y-1 pl-5 text-sm leading-6 text-ink/80">
-          {items.map((item) => (
-            <li key={item}>{renderInline(item)}</li>
-          ))}
-        </ul>,
-      );
-      continue;
-    }
-
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s*\d+\.\s+/, ''));
-        index += 1;
-      }
-      blocks.push(
-        <ol key={index} className="my-3 list-decimal space-y-1 pl-5 text-sm leading-6 text-ink/80">
-          {items.map((item) => (
-            <li key={item}>{renderInline(item)}</li>
-          ))}
-        </ol>,
-      );
-      continue;
-    }
-
-    const paragraph: string[] = [];
-    while (
-      index < lines.length &&
-      lines[index].trim() &&
-      !/^(#{1,3})\s+/.test(lines[index]) &&
-      !/^>\s?/.test(lines[index]) &&
-      !/^\s*[-*]\s+/.test(lines[index]) &&
-      !/^\s*\d+\.\s+/.test(lines[index])
-    ) {
-      paragraph.push(lines[index]);
-      index += 1;
-    }
-    blocks.push(
-      <p key={index} className="my-3 text-sm leading-7 text-ink/80">
-        {renderInline(paragraph.join(' '))}
-      </p>,
-    );
-  }
-
-  return <div className="prose max-w-none">{blocks}</div>;
-}
-
-function renderInline(text: string) {
-  const parts: React.ReactNode[] = [];
-  const pattern = /(\[[^\]]+\]\([^\)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(text))) {
-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    const token = match[0];
-    if (token.startsWith('[')) {
-      const link = /^\[([^\]]+)\]\(([^\)]+)\)$/.exec(token);
-      if (link) {
-        parts.push(
-          <a key={`${token}-${match.index}`} href={link[2]} target="_blank" rel="noreferrer" className="text-rust underline underline-offset-2">
-            {link[1]}
-          </a>,
-        );
-      }
-    } else if (token.startsWith('`')) {
-      parts.push(
-        <code key={`${token}-${match.index}`} className="rounded bg-canvas px-1 py-0.5 text-xs text-ink">
-          {token.slice(1, -1)}
-        </code>,
-      );
-    } else if (token.startsWith('**')) {
-      parts.push(<strong key={`${token}-${match.index}`}>{token.slice(2, -2)}</strong>);
-    } else {
-      parts.push(<em key={`${token}-${match.index}`}>{token.slice(1, -1)}</em>);
-    }
-    lastIndex = match.index + token.length;
-  }
-
-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
-  return parts;
 }

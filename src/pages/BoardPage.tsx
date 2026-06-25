@@ -30,6 +30,10 @@ export function BoardPage() {
       (await api.get(`/api/projects/${projectId}`)).data.project as ProjectDetail,
     enabled: !!projectId,
     staleTime: 10_000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.contextStatus;
+      return status === 'pending' || status === 'generating' ? 4000 : false;
+    },
   });
 
   const { data, isLoading: issuesLoading } = useQuery({
@@ -92,12 +96,14 @@ export function BoardPage() {
               >
                 <FileText size={14} /> Project details
               </button>
-              <button
-                onClick={() => setChatOpen(true)}
-                className="premium-focus flex items-center gap-1.5 rounded-md bg-rust px-3 py-2 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99]"
-              >
-                <MessageSquare size={14} /> Report an issue
-              </button>
+              {!chatOpen && (
+                <button
+                  onClick={() => setChatOpen(true)}
+                  className="premium-focus flex items-center gap-1.5 rounded-md bg-rust px-3 py-2 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99]"
+                >
+                  <MessageSquare size={14} /> Add an issue
+                </button>
+              )}
             </div>
           </div>
 
@@ -152,7 +158,6 @@ export function BoardPage() {
         projectId={projectId!}
         open={chatOpen}
         onClose={() => setChatOpen(false)}
-        onOpen={() => setChatOpen(true)}
         emptyBoard={isEmpty}
       />
 

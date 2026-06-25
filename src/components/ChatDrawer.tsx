@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Loader2,
-  PanelRightClose,
   Plus,
   History,
   Send,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { api, uploadFile } from '../lib/api';
+import { Markdown } from './Markdown';
 import { AttachmentUploadSkeleton, ChatMessageSkeleton } from './Skeleton';
 import type { ChatMessage, ChatThreadSummary, SuggestionDraft } from '../types';
 
@@ -20,7 +20,6 @@ interface Props {
   projectId: string;
   open: boolean;
   onClose: () => void;
-  onOpen: () => void;
   emptyBoard: boolean;
 }
 
@@ -34,7 +33,11 @@ interface PendingUpload {
   name: string;
 }
 
-export function ChatDrawer({ projectId, open, onClose, onOpen, emptyBoard }: Props) {
+const MIN_CHAT_WIDTH = 320;
+const MAX_CHAT_WIDTH = 760;
+const DEFAULT_CHAT_WIDTH = 380;
+
+export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
   const qc = useQueryClient();
   const [threads, setThreads] = useState<ChatThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -51,6 +54,46 @@ export function ChatDrawer({ projectId, open, onClose, onOpen, emptyBoard }: Pro
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [width, setWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('chatWidth'));
+    return saved >= MIN_CHAT_WIDTH && saved <= MAX_CHAT_WIDTH ? saved : DEFAULT_CHAT_WIDTH;
+  });
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const resizingRef = useRef(false);
+
+  // Drag the left edge to resize the chat; the board panel (flex-1) reflows.
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!resizingRef.current) return;
+      const next = Math.min(
+        MAX_CHAT_WIDTH,
+        Math.max(MIN_CHAT_WIDTH, window.innerWidth - e.clientX),
+      );
+      setWidth(next);
+    }
+    function onUp() {
+      if (!resizingRef.current) return;
+      resizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem('chatWidth', String(widthRef.current));
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  function startResize(e: React.MouseEvent) {
+    e.preventDefault();
+    resizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
 
   // Load conversation list for the project and open the most recent thread.
   useEffect(() => {
@@ -205,26 +248,28 @@ export function ChatDrawer({ projectId, open, onClose, onOpen, emptyBoard }: Pro
   }
 
   if (!open) {
-    return (
-      <button
-        onClick={onOpen}
-        className="premium-focus absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded-l-md border border-r-0 border-line bg-surface px-2 py-3 text-muted shadow-sm animate-slide-in-right hover:text-ink hover:shadow-md"
-        title="Open chat"
-      >
-        <PanelRightClose size={16} />
-      </button>
-    );
+    return null;
   }
 
   return (
-    <aside className="relative flex h-full w-[380px] flex-shrink-0 flex-col border-l border-line bg-surface animate-slide-in-right shadow-sm">
+    <aside
+      style={{ width }}
+      className="relative flex h-full flex-shrink-0 flex-col border-l border-line bg-surface animate-slide-in-right shadow-sm"
+    >
+      <div
+        onMouseDown={startResize}
+        className="group absolute left-0 top-0 z-40 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
+        title="Drag to resize"
+      >
+        <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-rust/40" />
+      </div>
       <header className="flex items-center justify-between border-b border-line px-4 py-3 animate-fade-in">
         <div className="flex items-center gap-2">
           <span className="flex h-6 w-6 items-center justify-center rounded bg-rust text-xs font-semibold text-white">
             B
           </span>
           <div className="leading-tight">
-            <p className="text-sm font-medium">Report an issue</p>
+            <p className="text-sm font-medium">Bug AI</p>
             <p className="text-xs text-muted">AI assistant</p>
           </div>
         </div>
@@ -286,10 +331,7 @@ export function ChatDrawer({ projectId, open, onClose, onOpen, emptyBoard }: Pro
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {loadingThread ? (
-          <>
-            <ChatMessageSkeleton />
-            <ChatMessageSkeleton />
-          </>
+          <ChatMessageSkeleton />
         ) : (
           <>
             <div className="flex gap-2">
@@ -302,7 +344,9 @@ export function ChatDrawer({ projectId, open, onClose, onOpen, emptyBoard }: Pro
 
             {messages.map((m) => (
               <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex'}>
-                <Bubble role={m.role}>{m.content}</Bubble>
+                <Bubble role={m.role}>
+                  {m.role === 'assistant' ? <Markdown content={m.content} /> : m.content}
+                </Bubble>
               </div>
             ))}
 
@@ -384,7 +428,7 @@ export function ChatDrawer({ projectId, open, onClose, onOpen, emptyBoard }: Pro
             <button
               onClick={() => void send()}
               disabled={sending || !input.trim()}
-              className="premium-focus rounded-md bg-rust p-1.5 text-white hover:bg-rust-dark active:scale-95 disabled:opacity-40"
+              className="premium-focus flex h-8 w-8 items-center justify-center rounded-full bg-rust text-white hover:bg-rust-dark active:scale-95 disabled:opacity-40"
             >
               {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             </button>
@@ -466,7 +510,9 @@ function SuggestionCard({
           className="premium-focus mt-3 h-20 w-full resize-none rounded border border-line px-2 py-1 text-sm outline-none focus:border-rust focus:shadow-[0_0_0_3px_rgba(192,85,45,0.10)]"
         />
       ) : (
-        <p className="mt-3 text-sm text-ink/80">{draft.description}</p>
+        <div className="mt-3 text-ink/80">
+          <Markdown content={draft.description} />
+        </div>
       )}
 
       {draft.stepsToReproduce.length > 0 && (

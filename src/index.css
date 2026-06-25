@@ -36,6 +36,87 @@ body {
     opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Markdown content rendering (chat, issue details, briefs, comments) */
+.md-body {
+  @apply text-sm leading-relaxed break-words;
+}
+.md-body > :first-child {
+  margin-top: 0;
+}
+.md-body > :last-child {
+  margin-bottom: 0;
+}
+.md-body p {
+  @apply my-2;
+}
+.md-body strong {
+  @apply font-semibold;
+}
+.md-body em {
+  @apply italic;
+}
+.md-body ul {
+  @apply my-2 list-disc space-y-1 pl-5;
+}
+.md-body ol {
+  @apply my-2 list-decimal space-y-1 pl-5;
+}
+.md-body li {
+  @apply leading-relaxed;
+}
+.md-body li > ul,
+.md-body li > ol {
+  @apply my-1;
+}
+.md-body h1 {
+  @apply mb-2 mt-4 font-serif text-xl;
+}
+.md-body h2 {
+  @apply mb-2 mt-4 font-serif text-lg;
+}
+.md-body h3 {
+  @apply mb-1.5 mt-3 text-base font-semibold;
+}
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  @apply mb-1 mt-3 font-semibold;
+}
+.md-body a {
+  @apply text-rust underline underline-offset-2 hover:text-rust-dark;
+}
+.md-body blockquote {
+  @apply my-2 border-l-2 border-line pl-3 italic text-muted;
+}
+.md-body code {
+  @apply font-mono text-[0.85em];
+}
+.md-body :not(pre) > code {
+  @apply rounded bg-black/[0.06] px-1 py-0.5;
+}
+.md-body pre {
+  @apply my-2 overflow-x-auto rounded-md bg-ink p-3 text-xs text-white;
+}
+.md-body pre code {
+  @apply bg-transparent p-0 text-white;
+}
+.md-body hr {
+  @apply my-3 border-line;
+}
+.md-body table {
+  @apply my-2 w-full border-collapse text-sm;
+}
+.md-body th,
+.md-body td {
+  @apply border border-line px-2 py-1 text-left;
+}
+.md-body th {
+  @apply bg-canvas font-semibold;
+}
+.md-body img {
+  @apply my-2 max-w-full rounded;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

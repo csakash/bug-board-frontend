@@ -21,3 +21,8 @@ export async function uploadFile(file: File, projectId?: string): Promise<string
 
   return data.fileId as string;
 }
+
+// Re-run AI context generation for a project (brief + screenshots).
+export async function regenerateContext(projectId: string): Promise<void> {
+  await api.post(`/api/projects/${projectId}/context/regenerate`);
+}

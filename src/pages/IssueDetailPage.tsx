@@ -5,6 +5,7 @@ import { ChevronLeft, FileText, Image as ImageIcon, Loader2, Paperclip } from 'l
 import { formatDistanceToNowStrict } from 'date-fns';
 import { api, uploadFile } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { Markdown } from '../components/Markdown';
 import { Avatar, SeverityTag } from '../components/ui';
 import { AttachmentUploadSkeleton, IssueDetailSkeleton } from '../components/Skeleton';
 import type { Issue, IssueStatus, ReviewState } from '../types';
@@ -110,7 +111,7 @@ export function IssueDetailPage() {
           </div>
 
           <Section title="Description">
-            <p className="text-sm leading-relaxed text-ink/85">{issue.description}</p>
+            <Markdown content={issue.description} className="text-ink/85" />
           </Section>
 
           {issue.stepsToReproduce.length > 0 && (
@@ -193,7 +194,7 @@ export function IssueDetailPage() {
                       </span>
                     </p>
                     <div className="mt-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink/85">
-                      {c.body}
+                      <Markdown content={c.body} />
                     </div>
                   </div>
                 </div>
