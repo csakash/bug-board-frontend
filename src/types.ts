@@ -25,6 +25,7 @@ export interface ProjectSummary {
   name: string;
   key: string;
   description: string;
+  summary?: string | null;
   color?: string | null;
   contextStatus: 'pending' | 'generating' | 'ready' | 'failed';
   issueCount: number;

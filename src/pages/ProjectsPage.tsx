@@ -47,7 +47,7 @@ export function ProjectsPage() {
                 });
               }}
               onClick={() => navigate(`/projects/${p.id}`)}
-              className="premium-focus rounded-xl border border-line bg-surface p-5 text-left shadow-sm animate-fade-up hover:-translate-y-0.5 hover:border-rust/40 hover:shadow-md active:translate-y-0"
+              className="premium-focus flex h-[230px] flex-col rounded-xl border border-line bg-surface p-5 text-left shadow-sm animate-fade-up hover:-translate-y-0.5 hover:border-rust/40 hover:shadow-md active:translate-y-0"
             >
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted">
@@ -60,8 +60,10 @@ export function ProjectsPage() {
                 <span className="text-xs text-muted">{p.issueCount} issues</span>
               </div>
               <h3 className="mt-3 font-display text-xl">{p.name}</h3>
-              <p className="mt-1 text-sm text-muted">{p.description}</p>
-              <div className="mt-5 flex items-center justify-between">
+              <p className="mt-2 h-[4.5rem] overflow-hidden text-sm leading-6 text-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
+                {getProjectCardSummary(p)}
+              </p>
+              <div className="mt-auto flex items-center justify-between pt-5">
                 <span className="flex items-center gap-1.5 text-xs text-muted">
                   <span className="h-1.5 w-1.5 rounded-full bg-rust" />
                   {p.activeCount} active
@@ -88,5 +90,25 @@ export function ProjectsPage() {
       {showModal && <CreateProjectModal onClose={() => setShowModal(false)} />}
     </div>
   );
+}
+
+function getProjectCardSummary(project: ProjectSummary): string {
+  if (project.summary?.trim()) return shortenPlainText(project.summary, 170);
+  return shortenPlainText(project.description, 170);
+}
+
+function shortenPlainText(value: string, maxLength: number): string {
+  const cleaned = value
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*_~|\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cleaned.length <= maxLength) return cleaned;
+  const clipped = cleaned.slice(0, maxLength).replace(/\s+\S*$/, '').trim();
+  return `${clipped}...`;
 }
 
