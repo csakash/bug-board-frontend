@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { SearchIssue } from '../types';
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:4000',
@@ -25,4 +26,15 @@ export async function uploadFile(file: File, projectId?: string): Promise<string
 // Re-run AI context generation for a project (brief + screenshots).
 export async function regenerateContext(projectId: string): Promise<void> {
   await api.post(`/api/projects/${projectId}/context/regenerate`);
+}
+
+// Permanently delete a project and all of its issues, files, and threads.
+export async function deleteProject(projectId: string): Promise<void> {
+  await api.delete(`/api/projects/${projectId}`);
+}
+
+// Search issues across every project in the workspace.
+export async function searchIssues(q: string): Promise<SearchIssue[]> {
+  const { data } = await api.get('/api/search/issues', { params: { q } });
+  return data.issues as SearchIssue[];
 }

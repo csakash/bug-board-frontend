@@ -109,6 +109,10 @@ export interface GroupedIssues {
   resolved: Issue[];
 }
 
+export interface SearchIssue extends Issue {
+  project: { id: string; key: string; name: string; color?: string | null };
+}
+
 export interface SuggestionDraft {
   type: IssueType;
   title: string;
