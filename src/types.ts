@@ -31,6 +31,30 @@ export interface ProjectSummary {
   activeCount: number;
 }
 
+export interface ProjectContextProfile {
+  summary: string;
+  audience?: string | null;
+  terminology: string[];
+  flows: string[];
+  components: string[];
+  suggestedLabels: string[];
+  suggestedTemplates: string[];
+  risks: string[];
+  openQuestions: string[];
+}
+
+export interface ProjectFileRef {
+  purpose: 'context' | 'screenshot' | 'video' | 'log' | 'document' | 'attachment' | string;
+  createdAt: string;
+  file: FileRef & { createdAt?: string };
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  context?: ProjectContextProfile | null;
+  labels?: Label[];
+  files?: ProjectFileRef[];
+}
+
 export interface Label {
   id: string;
   name: string;

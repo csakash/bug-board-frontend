@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronDown, MessageSquare, Paperclip } from 'lucide-react';
+import { ChevronDown, FileText, MessageSquare, Paperclip } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { api } from '../lib/api';
 import { Avatar, SeverityTag, StatusDot, Pill, STATUS_META } from '../components/ui';
 import { ChatDrawer } from '../components/ChatDrawer';
+import { ProjectDetailsModal } from '../components/ProjectDetailsModal';
 import { BoardSkeleton, SkeletonBlock } from '../components/Skeleton';
-import type { GroupedIssues, Issue, IssueStatus, ProjectSummary } from '../types';
+import type { GroupedIssues, Issue, IssueStatus, ProjectDetail } from '../types';
 
 const FILTERS: { key: 'all' | IssueStatus; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -20,14 +21,13 @@ export function BoardPage() {
   const { projectId } = useParams();
   const [filter, setFilter] = useState<'all' | IssueStatus>('all');
   const [chatOpen, setChatOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const qc = useQueryClient();
 
   const { data: project, isLoading: projectLoading } = useQuery({
     queryKey: ['project', projectId],
     queryFn: async () =>
-      (await api.get(`/api/projects/${projectId}`)).data.project as ProjectSummary & {
-        description: string;
-      },
+      (await api.get(`/api/projects/${projectId}`)).data.project as ProjectDetail,
     enabled: !!projectId,
     staleTime: 10_000,
   });
@@ -72,16 +72,33 @@ export function BoardPage() {
               <h1 className="font-display text-3xl">
                 {project?.name ?? <SkeletonBlock className="h-9 w-56" />}
               </h1>
-              <p className="mt-1 text-sm text-muted">
-                {project?.description ?? <SkeletonBlock className="h-4 w-80" />}
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                {project ? (
+                  <>
+                    <span>{counts.all} total issues</span>
+                    <span className="h-1 w-1 rounded-full bg-muted/50" />
+                    <span className="capitalize">AI context {project.contextStatus.replace('_', ' ')}</span>
+                  </>
+                ) : (
+                  <SkeletonBlock className="h-4 w-64" />
+                )}
+              </div>
             </div>
-            <button
-              onClick={() => setChatOpen(true)}
-              className="premium-focus flex items-center gap-1.5 rounded-md bg-rust px-3 py-2 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99]"
-            >
-              <MessageSquare size={14} /> Report an issue
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDetailsOpen(true)}
+                disabled={!project}
+                className="premium-focus flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 text-sm font-medium text-muted hover:border-rust/30 hover:text-ink active:scale-[0.99] disabled:opacity-50"
+              >
+                <FileText size={14} /> Project details
+              </button>
+              <button
+                onClick={() => setChatOpen(true)}
+                className="premium-focus flex items-center gap-1.5 rounded-md bg-rust px-3 py-2 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99]"
+              >
+                <MessageSquare size={14} /> Report an issue
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 flex gap-1 border-b border-line pb-px animate-fade-up [animation-delay:80ms]">
@@ -138,6 +155,19 @@ export function BoardPage() {
         onOpen={() => setChatOpen(true)}
         emptyBoard={isEmpty}
       />
+
+      {detailsOpen && project && (
+        <ProjectDetailsModal
+          project={project}
+          issueCounts={{
+            total: counts.all,
+            open: counts.open,
+            inProgress: counts.in_progress,
+            resolved: counts.resolved,
+          }}
+          onClose={() => setDetailsOpen(false)}
+        />
+      )}
     </div>
   );
 }
