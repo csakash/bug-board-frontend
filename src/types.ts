@@ -20,6 +20,25 @@ export interface User {
   avatarUrl?: string | null;
 }
 
+export type ProjectRole = 'owner' | 'member';
+
+export interface ProjectMemberInfo {
+  userId: string;
+  role: ProjectRole;
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+  joinedAt: string;
+}
+
+export interface PendingInvite {
+  id: string;
+  email: string;
+  createdAt: string;
+  expiresAt: string;
+  acceptUrl: string;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -30,6 +49,8 @@ export interface ProjectSummary {
   contextStatus: 'pending' | 'generating' | 'ready' | 'failed';
   issueCount: number;
   activeCount: number;
+  // Present once a project has members beyond its owner (shared vs personal).
+  memberCount?: number;
 }
 
 export interface ProjectContextProfile {
@@ -54,6 +75,17 @@ export interface ProjectDetail extends ProjectSummary {
   context?: ProjectContextProfile | null;
   labels?: Label[];
   files?: ProjectFileRef[];
+  members?: ProjectMemberInfo[];
+  myRole?: ProjectRole;
+  pendingInvites?: PendingInvite[];
+}
+
+export interface InvitePreview {
+  projectName: string;
+  inviterName: string;
+  email: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  expired: boolean;
 }
 
 export interface Label {

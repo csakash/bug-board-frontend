@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { BoardPage } from './pages/BoardPage';
 import { IssueDetailPage } from './pages/IssueDetailPage';
+import { InvitePage } from './pages/InvitePage';
 import { AppShellSkeleton } from './components/Skeleton';
 
 export default function App() {
@@ -23,6 +24,8 @@ export default function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* Invite links must work while logged out. */}
+        <Route path="/invite/:token" element={<InvitePage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -30,6 +33,8 @@ export default function App() {
 
   return (
     <Routes>
+      {/* Reachable while logged in too — auto-accepts when the email matches. */}
+      <Route path="/invite/:token" element={<InvitePage />} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<ProjectsPage />} />
         <Route path="/projects/:projectId" element={<BoardPage />} />

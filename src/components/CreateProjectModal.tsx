@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Paperclip, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import { Paperclip, Image as ImageIcon, X, Loader2, Mail } from 'lucide-react';
 import { api, uploadFile } from '../lib/api';
 import { AttachmentUploadSkeleton } from './Skeleton';
 
@@ -11,6 +11,8 @@ interface PendingFile {
   kind: 'attachment' | 'screenshot';
 }
 
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -19,16 +21,51 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [inviteEmails, setInviteEmails] = useState<string[]>([]);
+  const [emailInput, setEmailInput] = useState('');
+  const [emailError, setEmailError] = useState('');
+
+  function addEmail() {
+    const email = emailInput.trim().toLowerCase();
+    if (!email) return;
+    if (!EMAIL_RE.test(email)) {
+      setEmailError('Enter a valid email address.');
+      return;
+    }
+    if (inviteEmails.includes(email)) {
+      setEmailInput('');
+      return;
+    }
+    setInviteEmails((prev) => [...prev, email]);
+    setEmailInput('');
+    setEmailError('');
+  }
+
+  function onEmailKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addEmail();
+    } else if (e.key === 'Backspace' && !emailInput && inviteEmails.length) {
+      setInviteEmails((prev) => prev.slice(0, -1));
+    }
+  }
 
   const create = useMutation({
     mutationFn: async () => {
       const fileIds = files.filter((f) => f.kind === 'attachment').map((f) => f.fileId);
       const screenshotIds = files.filter((f) => f.kind === 'screenshot').map((f) => f.fileId);
+      // Fold any half-typed email in the input into the invite list.
+      const pending = emailInput.trim().toLowerCase();
+      const invites =
+        pending && EMAIL_RE.test(pending) && !inviteEmails.includes(pending)
+          ? [...inviteEmails, pending]
+          : inviteEmails;
       const { data } = await api.post('/api/projects', {
         name,
         description,
         fileIds,
         screenshotIds,
+        invites,
       });
       return data.project as { id: string };
     },
@@ -89,6 +126,48 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
+
+        <label className="mt-4 block text-xs font-medium text-muted">
+          Invite teammates <span className="text-muted/70">(optional)</span>
+        </label>
+        <div className="premium-focus mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-line bg-white px-2 py-1.5 focus-within:border-rust focus-within:shadow-[0_0_0_3px_rgba(192,85,45,0.12)]">
+          {inviteEmails.map((email) => (
+            <span
+              key={email}
+              className="inline-flex items-center gap-1 rounded bg-canvas px-2 py-0.5 text-xs text-ink animate-fade-in"
+            >
+              <Mail size={11} className="text-muted" />
+              {email}
+              <button
+                type="button"
+                onClick={() => setInviteEmails((prev) => prev.filter((e) => e !== email))}
+                className="text-muted hover:text-rust"
+                aria-label={`Remove ${email}`}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+          <input
+            className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm outline-none"
+            placeholder={inviteEmails.length ? 'Add another…' : 'teammate@company.com'}
+            type="email"
+            value={emailInput}
+            onChange={(e) => {
+              setEmailInput(e.target.value);
+              setEmailError('');
+            }}
+            onKeyDown={onEmailKeyDown}
+            onBlur={addEmail}
+          />
+        </div>
+        {emailError ? (
+          <p className="mt-1 text-xs text-rust">{emailError}</p>
+        ) : (
+          <p className="mt-1 text-xs text-muted">
+            They get an email invite and land on this board after signing in.
+          </p>
+        )}
 
         <div className="mt-4 flex gap-2">
           <label className="premium-focus flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-sm text-muted hover:border-rust/30 hover:text-ink active:scale-[0.99]">

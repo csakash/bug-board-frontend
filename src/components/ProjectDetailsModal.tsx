@@ -2,20 +2,35 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  Check,
   FileText,
   Image as ImageIcon,
   Layers,
+  Link2,
   Loader2,
+  Mail,
   RefreshCw,
   Tag,
+  Trash2,
+  UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { api, regenerateContext } from '../lib/api';
+import { api, inviteMember, regenerateContext, removeMember, revokeInvite } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { Avatar } from './ui';
 import { Markdown } from './Markdown';
-import type { ProjectDetail, ProjectFileRef } from '../types';
+import type { PendingInvite, ProjectDetail, ProjectFileRef } from '../types';
 
-type DetailTab = 'overview' | 'screenshots' | 'context';
+type DetailTab = 'overview' | 'screenshots' | 'context' | 'members';
+
+function extractError(e: unknown): string {
+  return (
+    (e as { response?: { data?: { error?: string } } }).response?.data?.error ??
+    'Something went wrong'
+  );
+}
 
 interface Props {
   project: ProjectDetail;
@@ -94,6 +109,9 @@ export function ProjectDetailsModal({ project, issueCounts, onClose }: Props) {
             </TabButton>
             <TabButton active={tab === 'context'} onClick={() => setTab('context')} icon={<Layers size={14} />}>
               AI context
+            </TabButton>
+            <TabButton active={tab === 'members'} onClick={() => setTab('members')} icon={<Users size={14} />}>
+              Members {(project.members?.length ?? 0) > 1 ? project.members?.length : ''}
             </TabButton>
           </div>
         </header>
@@ -193,9 +211,205 @@ export function ProjectDetailsModal({ project, issueCounts, onClose }: Props) {
               )}
             </section>
           )}
+
+          {tab === 'members' && <MembersTab project={project} />}
         </div>
       </div>
     </div>
+  );
+}
+
+function MembersTab({ project }: { project: ProjectDetail }) {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const isOwner = project.myRole === 'owner';
+  const members = project.members ?? [];
+  const invites = project.pendingInvites ?? [];
+  const [email, setEmail] = useState('');
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const refresh = () => void qc.invalidateQueries({ queryKey: ['project', project.id] });
+
+  async function copyLink(inv: PendingInvite) {
+    try {
+      await navigator.clipboard.writeText(inv.acceptUrl);
+      setCopiedId(inv.id);
+      setTimeout(() => setCopiedId((id) => (id === inv.id ? null : id)), 1500);
+    } catch {
+      // Clipboard blocked (insecure context / permissions) — surface the URL.
+      window.prompt('Copy this invite link:', inv.acceptUrl);
+    }
+  }
+
+  const invite = useMutation({
+    mutationFn: () => inviteMember(project.id, email.trim().toLowerCase()),
+    onSuccess: (res) => {
+      const sentTo = email.trim().toLowerCase();
+      setEmail('');
+      setError('');
+      if (res.alreadyMember) setNotice('That person is already a member.');
+      else if (res.emailSent) setNotice(`Invite sent to ${sentTo}.`);
+      else
+        setNotice(
+          'Invite created, but the email could not be sent. Use “Copy link” below to share it.',
+        );
+      refresh();
+    },
+    onError: (e) => {
+      setNotice('');
+      setError(extractError(e));
+    },
+  });
+
+  const revoke = useMutation({
+    mutationFn: (inviteId: string) => revokeInvite(project.id, inviteId),
+    onSuccess: refresh,
+  });
+
+  const remove = useMutation({
+    mutationFn: (userId: string) => removeMember(project.id, userId),
+    onSuccess: () => {
+      setError('');
+      refresh();
+    },
+    onError: (e) => setError(extractError(e)),
+  });
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <p className="text-sm font-medium text-ink">Members</p>
+        <p className="text-xs text-muted">
+          {members.length <= 1
+            ? 'This project is personal. Invite someone to collaborate.'
+            : `${members.length} people can see and work on this board.`}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {members.map((m) => (
+          <div
+            key={m.userId}
+            className="flex items-center justify-between rounded-lg border border-line bg-white px-3 py-2"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar name={m.name} size={30} />
+              <div className="min-w-0">
+                <p className="truncate text-sm text-ink">
+                  {m.name}
+                  {m.userId === user?.id && <span className="text-muted"> (you)</span>}
+                </p>
+                <p className="truncate text-xs text-muted">{m.email}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`rounded px-1.5 py-0.5 text-[11px] capitalize ${
+                  m.role === 'owner'
+                    ? 'bg-[#fbeae6] text-rust'
+                    : 'border border-line bg-canvas text-muted'
+                }`}
+              >
+                {m.role}
+              </span>
+              {isOwner && m.userId !== user?.id && (
+                <button
+                  onClick={() => remove.mutate(m.userId)}
+                  disabled={remove.isPending}
+                  className="premium-focus rounded p-1 text-muted hover:text-rust disabled:opacity-50"
+                  title={`Remove ${m.name}`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {isOwner && (
+        <div className="space-y-3">
+          <div>
+            <p className="mb-2 text-sm font-medium text-ink">Invite a teammate</p>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError('');
+                  setNotice('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && email.trim()) invite.mutate();
+                }}
+                placeholder="teammate@company.com"
+                className="premium-focus flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm outline-none focus:border-rust focus:shadow-[0_0_0_3px_rgba(192,85,45,0.12)]"
+              />
+              <button
+                onClick={() => invite.mutate()}
+                disabled={!email.trim() || invite.isPending}
+                className="premium-focus flex items-center gap-1.5 rounded-md bg-rust px-4 py-2 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99] disabled:opacity-50"
+              >
+                {invite.isPending ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                Invite
+              </button>
+            </div>
+            {notice && <p className="mt-2 text-xs text-[#3f6f4e]">{notice}</p>}
+            {error && <p className="mt-2 text-xs text-rust">{error}</p>}
+          </div>
+
+          {invites.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-ink">Pending invites</p>
+              <div className="space-y-2">
+                {invites.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="flex items-center justify-between rounded-lg border border-dashed border-line bg-canvas px-3 py-2"
+                  >
+                    <span className="flex min-w-0 items-center gap-2 text-sm text-ink">
+                      <Mail size={14} className="text-muted" />
+                      <span className="truncate">{inv.email}</span>
+                      <span className="whitespace-nowrap text-xs text-muted">
+                        · expires in {formatDistanceToNowStrict(new Date(inv.expiresAt))}
+                      </span>
+                    </span>
+                    <span className="flex flex-shrink-0 items-center gap-1">
+                      <button
+                        onClick={() => void copyLink(inv)}
+                        className="premium-focus flex items-center gap-1 rounded px-1.5 py-1 text-xs text-muted hover:text-ink"
+                        title="Copy invite link"
+                      >
+                        {copiedId === inv.id ? (
+                          <>
+                            <Check size={13} className="text-[#3f6f4e]" /> Copied
+                          </>
+                        ) : (
+                          <>
+                            <Link2 size={13} /> Copy link
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => revoke.mutate(inv.id)}
+                        disabled={revoke.isPending}
+                        className="premium-focus rounded p-1 text-muted hover:text-rust disabled:opacity-50"
+                        title="Revoke invite"
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
