@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { ChevronLeft, FileText, Image as ImageIcon, Loader2, Paperclip } from 'lucide-react';
+import { ChevronLeft, FileText, Image as ImageIcon, Loader2, MessageSquare, Paperclip } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { api, uploadFile } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Markdown } from '../components/Markdown';
+import { ChatDrawer } from '../components/ChatDrawer';
 import { Avatar, SeverityTag } from '../components/ui';
 import { AttachmentUploadSkeleton, IssueDetailSkeleton } from '../components/Skeleton';
 import type { Issue, IssueStatus, ReviewState } from '../types';
@@ -20,6 +21,7 @@ export function IssueDetailPage() {
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ fileId: string; name: string }>>([]);
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
 
   const { data: issue } = useQuery({
     queryKey: ['issue', issueId],
@@ -79,15 +81,26 @@ export function IssueDetailPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-10 py-8 animate-fade-in">
+    <div className="flex h-full animate-fade-in">
+      <div className="min-w-0 flex-1 overflow-y-auto px-10 py-8">
       <div className="mx-auto grid max-w-4xl grid-cols-[1fr_220px] gap-10">
         <div className="animate-fade-up">
-          <Link
-            to={`/projects/${projectId}`}
-            className="premium-focus inline-flex items-center gap-1 text-sm text-muted hover:-translate-x-0.5 hover:text-ink"
-          >
-            <ChevronLeft size={14} /> {issue.project?.key} board
-          </Link>
+          <div className="flex items-center justify-between gap-2">
+            <Link
+              to={`/projects/${projectId}`}
+              className="premium-focus inline-flex items-center gap-1 text-sm text-muted hover:-translate-x-0.5 hover:text-ink"
+            >
+              <ChevronLeft size={14} /> {issue.project?.key} board
+            </Link>
+            {!chatOpen && (
+              <button
+                onClick={() => setChatOpen(true)}
+                className="premium-focus flex items-center gap-1.5 rounded-md bg-rust px-3 py-1.5 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99]"
+              >
+                <MessageSquare size={14} /> Bug AI
+              </button>
+            )}
+          </div>
 
           <p className="mt-4 text-xs text-muted">{issue.issueKey}</p>
           <h1 className="mt-1 font-display text-3xl leading-tight">{issue.title}</h1>
@@ -313,6 +326,15 @@ export function IssueDetailPage() {
           {issue.environment && <Meta label="Environment">{issue.environment}</Meta>}
         </aside>
       </div>
+      </div>
+
+      <ChatDrawer
+        key={issueId}
+        projectId={projectId!}
+        issueId={issueId!}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
   );
 }
