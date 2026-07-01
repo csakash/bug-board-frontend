@@ -8,19 +8,23 @@ import {
   Image as ImageIcon,
   Paperclip,
   Star,
+  Wand2,
   X,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { api, uploadFile } from '../lib/api';
 import { Markdown } from './Markdown';
 import { AttachmentUploadSkeleton, ChatMessageSkeleton } from './Skeleton';
-import type { ChatMessage, ChatThreadSummary, SuggestionDraft } from '../types';
+import type { ChatMessage, ChatThreadSummary, IssueChatAction, SuggestionDraft } from '../types';
 
 interface Props {
   projectId: string;
+  /** When set, the drawer is scoped to a single issue: it lists that issue's
+   *  threads and the agent can propose confirm-gated actions on the issue. */
+  issueId?: string;
   open: boolean;
   onClose: () => void;
-  emptyBoard: boolean;
+  emptyBoard?: boolean;
 }
 
 interface Suggestion {
@@ -37,8 +41,12 @@ const MIN_CHAT_WIDTH = 320;
 const MAX_CHAT_WIDTH = 760;
 const DEFAULT_CHAT_WIDTH = 380;
 
-export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
+export function ChatDrawer({ projectId, issueId, open, onClose, emptyBoard = false }: Props) {
   const qc = useQueryClient();
+  // Base path for listing/creating threads: issue-scoped or project-scoped.
+  const threadsBase = issueId
+    ? `/api/issues/${issueId}/chat/threads`
+    : `/api/projects/${projectId}/chat/threads`;
   const [threads, setThreads] = useState<ChatThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -48,6 +56,9 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const [action, setAction] = useState<IssueChatAction | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [sending, setSending] = useState(false);
   const [adding, setAdding] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -62,6 +73,11 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
   const widthRef = useRef(width);
   widthRef.current = width;
   const resizingRef = useRef(false);
+  // Track the active thread so an in-flight send() can drop its response if the
+  // user switched threads before it arrived (avoids surfacing/applying an action
+  // against the wrong thread).
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
 
   // Drag the left edge to resize the chat; the board panel (flex-1) reflows.
   useEffect(() => {
@@ -95,13 +111,15 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
     document.body.style.userSelect = 'none';
   }
 
-  // Load conversation list for the project and open the most recent thread.
+  // Load conversation list (issue- or project-scoped) and open the most recent thread.
   useEffect(() => {
-    if (!projectId) return;
+    if (issueId ? !issueId : !projectId) return;
     let cancelled = false;
     setLoadingThread(true);
+    setSuggestion(null);
+    setAction(null);
     void api
-      .get(`/api/projects/${projectId}/chat/threads`)
+      .get(threadsBase)
       .then(async ({ data }) => {
         if (cancelled) return;
         const list = data.threads as ChatThreadSummary[];
@@ -121,11 +139,12 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, issueId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, suggestion, sending]);
+  }, [messages, suggestion, action, sending]);
 
   async function openThread(threadId: string) {
     if (threadId === activeThreadId) {
@@ -135,6 +154,8 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
     setShowHistory(false);
     setActiveThreadId(threadId);
     setSuggestion(null);
+    setAction(null);
+    setActionError('');
     setLoadingThread(true);
     try {
       const { data } = await api.get(`/api/chat/threads/${threadId}/messages`);
@@ -146,12 +167,14 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
 
   async function newChat() {
     setShowHistory(false);
-    const { data } = await api.post(`/api/projects/${projectId}/chat/threads`);
+    const { data } = await api.post(threadsBase);
     const thread = data.thread as ChatThreadSummary;
     setThreads((t) => [thread, ...t]);
     setActiveThreadId(thread.id);
     setMessages([]);
     setSuggestion(null);
+    setAction(null);
+    setActionError('');
     setInput('');
     setPendingFileIds([]);
     setPendingUploads([]);
@@ -160,6 +183,7 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
   async function send() {
     if (!input.trim() || sending || !activeThreadId) return;
     const content = input.trim();
+    const sentThreadId = activeThreadId;
     setInput('');
     setSending(true);
     setMessages((m) => [
@@ -167,10 +191,12 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
       { id: `tmp-${Date.now()}`, role: 'user', content, createdAt: new Date().toISOString() },
     ]);
     try {
-      const { data } = await api.post(`/api/chat/threads/${activeThreadId}/messages`, {
+      const { data } = await api.post(`/api/chat/threads/${sentThreadId}/messages`, {
         content,
         fileIds: pendingFileIds,
       });
+      // User switched threads while this was in flight — drop the stale response.
+      if (activeThreadIdRef.current !== sentThreadId) return;
       setPendingFileIds([]);
       setPendingUploads([]);
       setMessages((m) => [
@@ -182,9 +208,14 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
           createdAt: new Date().toISOString(),
         },
       ]);
-      setSuggestion(
-        data.suggestion ? { id: data.suggestion.id, draft: data.suggestion.draft } : null,
-      );
+      if (issueId) {
+        setAction((data.action as IssueChatAction | null) ?? null);
+        setActionError('');
+      } else {
+        setSuggestion(
+          data.suggestion ? { id: data.suggestion.id, draft: data.suggestion.draft } : null,
+        );
+      }
       // Reflect the (possibly newly derived) thread title in the history list.
       setThreads((list) =>
         list.map((t) =>
@@ -245,6 +276,41 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
     } finally {
       setDismissing(false);
     }
+  }
+
+  // Apply an issue action the agent proposed, using the same endpoints the
+  // issue page uses, then refresh the issue so the change shows immediately.
+  async function applyAction() {
+    if (!action || !issueId) return;
+    setApplying(true);
+    setActionError('');
+    try {
+      if (action.kind === 'update_fields') {
+        await api.patch(`/api/issues/${issueId}`, action.fields);
+      } else {
+        await api.post(`/api/issues/${issueId}/comments`, { body: action.comment });
+      }
+      void qc.invalidateQueries({ queryKey: ['issue', issueId] });
+      void qc.invalidateQueries({ queryKey: ['issues', projectId] });
+      const applied = action.kind === 'update_fields' ? 'Applied the changes to this issue.' : 'Posted the comment.';
+      setMessages((m) => [
+        ...m,
+        { id: `sys-${Date.now()}`, role: 'assistant', content: `✓ ${applied}`, createdAt: new Date().toISOString() },
+      ]);
+      setAction(null);
+    } catch (error) {
+      setActionError(
+        (error as { response?: { data?: { error?: string } } }).response?.data?.error ??
+          'Could not apply that. Try again.',
+      );
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  function dismissAction() {
+    setAction(null);
+    setActionError('');
   }
 
   if (!open) {
@@ -336,9 +402,11 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
           <>
             <div className="flex gap-2">
               <Bubble role="assistant">
-                {emptyBoard
-                  ? "Let's create your first issue. Describe a bug, feature, or improvement — attach a screenshot or recording if you have one — and I'll turn it into a clean, structured card."
-                  : "Hi, I'm your project assistant. Ask me about open issues and status, or describe a bug or feature and I'll draft a structured card."}
+                {issueId
+                  ? "Hi — I'm focused on this issue. Ask me anything about it, or ask me to tighten the description, sharpen the repro steps, refine the acceptance criteria, adjust severity/status, or draft a comment. You'll confirm any change before it's applied."
+                  : emptyBoard
+                    ? "Let's create your first issue. Describe a bug, feature, or improvement — attach a screenshot or recording if you have one — and I'll turn it into a clean, structured card."
+                    : "Hi, I'm your project assistant. Ask me about open issues and status, or describe a bug or feature and I'll draft a structured card."}
               </Bubble>
             </div>
 
@@ -364,6 +432,16 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
                 onDismiss={dismiss}
                 adding={adding}
                 dismissing={dismissing}
+              />
+            )}
+
+            {action && (
+              <ActionCard
+                action={action}
+                onApply={applyAction}
+                onDismiss={dismissAction}
+                applying={applying}
+                error={actionError}
               />
             )}
           </>
@@ -400,7 +478,7 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
                 void send();
               }
             }}
-            placeholder="Describe the issue you ran into…"
+            placeholder={issueId ? 'Ask about this issue, or ask for a change…' : 'Describe the issue you ran into…'}
             className="h-12 w-full resize-none text-sm outline-none"
           />
           <div className="flex items-center justify-between">
@@ -436,6 +514,103 @@ export function ChatDrawer({ projectId, open, onClose, emptyBoard }: Props) {
         </div>
       </div>
     </aside>
+  );
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  title: 'Title',
+  description: 'Description',
+  type: 'Type',
+  status: 'Status',
+  severity: 'Severity',
+  priority: 'Priority',
+  environment: 'Environment',
+  expectedResult: 'Expected result',
+  actualResult: 'Actual result',
+  stepsToReproduce: 'Steps to reproduce',
+  acceptanceCriteria: 'Acceptance criteria',
+};
+
+// A confirm-gated proposal from the issue agent: either a set of field edits or
+// a comment to post. Mirrors the SuggestionCard pattern.
+function ActionCard({
+  action,
+  onApply,
+  onDismiss,
+  applying,
+  error,
+}: {
+  action: IssueChatAction;
+  onApply: () => void;
+  onDismiss: () => void;
+  applying: boolean;
+  error: string;
+}) {
+  const isComment = action.kind === 'post_comment';
+  return (
+    <div className="rounded-xl border border-line bg-white p-4 shadow-sm animate-slide-up-soft">
+      <div className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted">
+        <Wand2 size={12} /> {isComment ? 'Proposed comment' : 'Proposed field update'}
+      </div>
+
+      <p className="mt-2 text-sm text-ink">{action.summary}</p>
+
+      {isComment ? (
+        <div className="mt-3 rounded-md border border-line bg-canvas px-3 py-2 text-sm text-ink/80">
+          <Markdown content={action.comment ?? ''} />
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {Object.entries(action.fields ?? {}).map(([key, value]) => (
+            <div key={key}>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted">
+                {FIELD_LABELS[key] ?? key}
+              </p>
+              {Array.isArray(value) ? (
+                <ul className="mt-0.5 space-y-0.5 text-sm text-ink/80">
+                  {value.map((v, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-muted">•</span>
+                      {v}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink/80">
+                  {value === null || value === '' ? '(cleared)' : String(value)}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="mt-2 text-xs text-rust">{error}</p>}
+
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          onClick={onApply}
+          disabled={applying}
+          className="premium-focus flex flex-1 items-center justify-center gap-1.5 rounded-md bg-rust py-2 text-sm font-medium text-white hover:bg-rust-dark active:scale-[0.99] disabled:opacity-60"
+        >
+          {applying && <Loader2 size={14} className="animate-spin" />}
+          {applying
+            ? isComment
+              ? 'Posting…'
+              : 'Applying…'
+            : isComment
+              ? 'Post comment'
+              : 'Apply changes'}
+        </button>
+        <button
+          onClick={onDismiss}
+          disabled={applying}
+          className="premium-focus rounded-md border border-line px-3 py-2 text-sm text-muted hover:border-rust/30 hover:text-ink active:scale-[0.99] disabled:opacity-60"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }
 

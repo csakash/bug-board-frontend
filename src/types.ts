@@ -132,6 +132,24 @@ export interface SuggestionDraft {
   fileIds?: string[];
 }
 
+export interface IssueFieldPatch {
+  title?: string;
+  description?: string;
+  type?: IssueType;
+  status?: IssueStatus;
+  severity?: Severity | null;
+  priority?: string | null;
+  environment?: string | null;
+  expectedResult?: string | null;
+  actualResult?: string | null;
+  stepsToReproduce?: string[];
+  acceptanceCriteria?: string[];
+}
+
+export type IssueChatAction =
+  | { kind: 'update_fields'; summary: string; fields: IssueFieldPatch }
+  | { kind: 'post_comment'; summary: string; comment: string };
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
