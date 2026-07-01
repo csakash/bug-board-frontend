@@ -1,7 +1,10 @@
 node_modules/
 .gstack/
+dist-ssr/
+*.local
 
-# Secrets — never commit
+# Local env (contains secrets). Never commit.
 .env
 .env.local
-.env.*.local
+.env.*
+!.env.example
