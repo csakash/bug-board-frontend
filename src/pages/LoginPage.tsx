@@ -7,16 +7,15 @@ export function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [mode, setMode] = useState<'login' | 'register'>(
-    searchParams.get('mode') === 'register' ? 'register' : 'login',
-  );
+  const modeFromParams = searchParams.get('mode') === 'register' ? 'register' : 'login';
+  const [mode, setMode] = useState<'login' | 'register'>(modeFromParams);
 
   // Keep the view in sync when the ?mode query changes (e.g. browser back/forward
   // between /login and /login?mode=register). The in-card toggle uses setMode
   // directly and does not touch the query, so it is unaffected.
   useEffect(() => {
-    setMode(searchParams.get('mode') === 'register' ? 'register' : 'login');
-  }, [searchParams]);
+    setMode(modeFromParams);
+  }, [modeFromParams]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('maya@bugboard.dev');
   const [password, setPassword] = useState('password123');
