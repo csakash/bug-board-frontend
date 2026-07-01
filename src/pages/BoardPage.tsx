@@ -30,10 +30,13 @@ export function BoardPage() {
       (await api.get(`/api/projects/${projectId}`)).data.project as ProjectDetail,
     enabled: !!projectId,
     staleTime: 10_000,
+    // Poll fast while AI context is generating; otherwise keep members and
+    // details fresh across users at a calmer cadence.
     refetchInterval: (query) => {
       const status = query.state.data?.contextStatus;
-      return status === 'pending' || status === 'generating' ? 4000 : false;
+      return status === 'pending' || status === 'generating' ? 4000 : 7000;
     },
+    refetchOnWindowFocus: true,
   });
 
   const { data, isLoading: issuesLoading } = useQuery({
@@ -45,6 +48,9 @@ export function BoardPage() {
       },
     enabled: !!projectId,
     staleTime: 5_000,
+    // Cross-user freshness: other members' new/moved issues appear within ~7s.
+    refetchInterval: 7000,
+    refetchOnWindowFocus: true,
   });
 
   const counts = useMemo(() => {

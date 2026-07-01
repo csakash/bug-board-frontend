@@ -26,6 +26,9 @@ export function IssueDetailPage() {
     queryFn: async () => (await api.get(`/api/issues/${issueId}`)).data.issue as Issue,
     enabled: !!issueId,
     staleTime: 5_000,
+    // Poll so other members' comments and status changes appear without reload.
+    refetchInterval: 7000,
+    refetchOnWindowFocus: true,
   });
 
   const setStatus = useMutation({

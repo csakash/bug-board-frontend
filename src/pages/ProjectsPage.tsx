@@ -16,6 +16,9 @@ export function ProjectsPage() {
     queryKey: ['projects'],
     queryFn: async () => (await api.get('/api/projects')).data.projects as ProjectSummary[],
     staleTime: 10_000,
+    // Poll so newly accepted memberships and cross-user activity appear.
+    refetchInterval: 7000,
+    refetchOnWindowFocus: true,
   });
 
   return (
