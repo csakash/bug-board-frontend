@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
@@ -10,6 +10,13 @@ export function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>(
     searchParams.get('mode') === 'register' ? 'register' : 'login',
   );
+
+  // Keep the view in sync when the ?mode query changes (e.g. browser back/forward
+  // between /login and /login?mode=register). The in-card toggle uses setMode
+  // directly and does not touch the query, so it is unaffected.
+  useEffect(() => {
+    setMode(searchParams.get('mode') === 'register' ? 'register' : 'login');
+  }, [searchParams]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('maya@bugboard.dev');
   const [password, setPassword] = useState('password123');
